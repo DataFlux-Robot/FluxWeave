@@ -94,46 +94,26 @@ The workflow is similar to the `URDF_kitchen` toolchain, with added features:
 
 ---
 
-### 使用流程图 | Workflow Diagram
-```mermaid
-flowchart TD
-    A[STL 模型 / STL Files] --> B[坐标轴调整 / Axis Adjustment]
-    B --> C[原点校正 / Origin Correction]
-    C --> D[连接点定义 / Marker Point Definition]
-    D --> E[质量与惯量指定 / Mass & Inertia Assignment]
-    E --> F[模块拼装 / Assembly]
-    F --> G[生成 URDF / URDF Export]
-    G --> H[导入仿真环境 / Simulation Import]
+### 未来计划 / Future plans:
 
+- 增加直接输出 USD 模型 / Add direct USD export
 
+- 引入更多预定义的几何模型和作动器 / Add more predefined geometries & actuators
 
-TODO
-未来计划 / Future plans:
+- 增加力学模型的同步载入 / Load physical models alongside URDF
 
-增加直接输出 USD 模型 / Add direct USD export
+- 增加高质量视觉素材的同步导入 / Import high-quality visual assets
 
-引入更多预定义的几何模型和作动器 / Add more predefined geometries & actuators
+- 增加一键生成 IsaacLab 模型 / One-click IsaacLab model generation
 
-增加力学模型的同步载入 / Load physical models alongside URDF
-
-增加高质量视觉素材的同步导入 / Import high-quality visual assets
-
-增加一键生成 IsaacLab 模型 / One-click IsaacLab model generation
-
-开源协议 | License
+### 开源协议 | License
 本项目基于 Apache 2.0 License 开源。
 欢迎自由使用、修改与贡献。
 
 This project is released under the Apache 2.0 License.
 Feel free to use, modify and contribute.
 
-联系方式 | Contact
-R³ 架构项目主页 / R³ Project Homepage: （待补充 To be added）
+### 欢迎提交 Issue 与 PR / Contributions via Issues and PRs are welcome!
 
-欢迎提交 Issue 与 PR / Contributions via Issues and PRs are welcome!
-
-yaml
-复制
-编辑
 
 
