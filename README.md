@@ -94,7 +94,7 @@ The workflow is similar to the `URDF_kitchen` toolchain, with added features:
 
 ---
 
-### 未来计划 / Future plans:
+## 未来计划 / Future plans:
 
 - 增加直接输出 USD 模型 / Add direct USD export
 
@@ -105,15 +105,18 @@ The workflow is similar to the `URDF_kitchen` toolchain, with added features:
 - 增加高质量视觉素材的同步导入 / Import high-quality visual assets
 
 - 增加一键生成 IsaacLab 模型 / One-click IsaacLab model generation
+---
 
-### 开源协议 | License
+## 开源协议 | License
 本项目基于 Apache 2.0 License 开源。
 欢迎自由使用、修改与贡献。
 
 This project is released under the Apache 2.0 License.
 Feel free to use, modify and contribute.
 
-### 欢迎提交 Issue 与 PR / Contributions via Issues and PRs are welcome!
+---
+
+## 欢迎提交 Issue 与 PR / Contributions via Issues and PRs are welcome!
 
 
 
