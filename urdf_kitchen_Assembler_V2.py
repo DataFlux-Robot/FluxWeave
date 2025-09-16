@@ -1,20 +1,3 @@
-"""
-File Name: urdf_kitchen_Assembler.py
-Description: A Python script to assembling files configured with urdf_kitchen_PartsEditor.py into a URDF file.
-
-Author      : Ninagawa123
-Created On  : Nov 24, 2024
-Version     : 0.0.2
-License     : MIT License
-URL         : https://github.com/Ninagawa123/URDF_kitchen_beta
-Copyright (c) 2024 Ninagawa123
-
-pip install numpy
-pip install PySide6
-pip install vtk
-pip install NodeGraphQt
-"""
-
 import sys
 import signal
 import traceback
