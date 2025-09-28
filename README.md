@@ -1,4 +1,4 @@
-# FluxhWeave (R³ 架构 - 动态 URDF 生成工具 / Dynamic URDF Generator for R³ Architecture)
+# FluxhWeave (动态 URDF 生成工具 / Dynamic URDF Generator for R³ Architecture)
 
 ---
 
