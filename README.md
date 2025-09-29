@@ -50,12 +50,17 @@ Based on it, we made the following improvements:
 FluxhWeave_Workbench.py 集成 STL 预处理、部件元数据管理与 URDF 装配，全流程围绕 SolidWorks 导出的 STL 实现快速、模块化的机器人模型构建。
 FluxhWeave_Workbench.py unifies STL preprocessing, part metadata editing, and URDF assembly, delivering a fast modular robot modeling pipeline for SolidWorks exports.
 ### Step 1 · STL 预处理 / STL Preprocessing
-导入 STL & 批量管理：选择单个或多个 SolidWorks 导出的 STL；工具自动记录最近使用路径，便于批量整理。
-Import STL & batch-ready: Load one or more SolidWorks STL files; recent directories are remembered for streamlined batch work.
-坐标调整与归一化：通过轴向旋转、镜像、缩放、原点平移等操作，将模型统一到规范坐标系；实时 VTK 预览辅助确认。
-Coordinate alignment: Rotate, mirror, scale, and translate the origin to normalize geometry; a live VTK preview validates each tweak.
-基础清理与导出：自动执行 STL 清理、法线修正，并可将处理结果导出供后续步骤直接使用。
-Cleanup & export: Automated STL cleanup and normal fixes ensure clean meshes that can be exported for the next stage.
+#### 1.导入 STL & 批量管理 /Import STL & batch-ready: 
+选择单个或多个 SolidWorks 导出的 STL；工具自动记录最近使用路径，便于批量整理。
+Load one or more SolidWorks STL files; recent directories are remembered for streamlined batch work.
+
+#### 2.坐标调整与归一化 / Coordinate alignment: 
+通过轴向旋转、镜像、缩放、原点平移等操作，将模型统一到规范坐标系；实时 VTK 预览辅助确认。
+Rotate, mirror, scale, and translate the origin to normalize geometry; a live VTK preview validates each tweak.
+
+#### 3.基础清理与导出 /Cleanup & export: 
+自动执行 STL 清理、法线修正，并可将处理结果导出供后续步骤直接使用。
+Automated STL cleanup and normal fixes ensure clean meshes that can be exported for the next stage.
 
 ### Step 2 · 部件元数据 / Part Metadata
 加载预处理 STL：一步导入 Step 1 的结果，界面自动读取模型尺寸并准备属性面板。
