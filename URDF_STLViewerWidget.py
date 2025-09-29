@@ -25,6 +25,8 @@ class STLViewerWidget(QtWidgets.QWidget):
         self.transforms = {}
         self.base_connected_node = None
         self.text_actors = []
+        self._batch_depth = 0
+        self._pending_render = False
 
         layout = QtWidgets.QVBoxLayout(self)
         self.vtkWidget = QVTKRenderWindowInteractor(self)
@@ -110,6 +112,24 @@ class STLViewerWidget(QtWidgets.QWidget):
 
         self.iren.Initialize()
 
+    def begin_batch_updates(self):
+        """Suspend即时渲染以批量更新多个节点。"""
+        self._batch_depth += 1
+
+    def end_batch_updates(self):
+        """结束批量更新并根据需要触发渲染。"""
+        if self._batch_depth > 0:
+            self._batch_depth -= 1
+        if self._batch_depth == 0 and self._pending_render:
+            self._pending_render = False
+            self._request_render()
+
+    def _request_render(self):
+        if self._batch_depth > 0:
+            self._pending_render = True
+        else:
+            self.vtkWidget.GetRenderWindow().Render()
+
     def store_current_transform(self, node):
         """保存节点当前的变换矩阵"""
         if node in self.transforms:
@@ -140,7 +160,7 @@ class STLViewerWidget(QtWidgets.QWidget):
                 self.stl_actors[self.rotating_node].SetUserTransform(self.transforms[self.rotating_node])
                 del self.original_transforms[self.rotating_node]
 
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
 
         self.rotating_node = None
 
@@ -182,7 +202,7 @@ class STLViewerWidget(QtWidgets.QWidget):
 
                 self.stl_actors[node].SetUserTransform(transform)
 
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
             self.current_angle += 1
 
     def reset_camera(self):
@@ -236,14 +256,14 @@ class STLViewerWidget(QtWidgets.QWidget):
 
         # 更新裁剪范围
         self.renderer.ResetCameraClippingRange()
-        self.vtkWidget.GetRenderWindow().Render()
+        self._request_render()
 
         print("相机已重置，所有 STL 模型均已适配视图")
 
     def reset_view_to_fit(self):
         """重新调整视角以完整显示全部STL模型"""
         self.reset_camera()
-        self.vtkWidget.GetRenderWindow().Render()
+        self._request_render()
 
     def create_coordinate_axes(self):
         """创建包含线段与文本的三轴坐标指示"""
@@ -316,7 +336,7 @@ class STLViewerWidget(QtWidgets.QWidget):
                     original_pos[2] + position[2]
                 )
 
-        self.vtkWidget.GetRenderWindow().Render()
+        self._request_render()
 
     def update_stl_transform(self, node, transform: vtk.vtkTransform):
         """更新指定节点的STL模型姿态"""
@@ -324,7 +344,6 @@ class STLViewerWidget(QtWidgets.QWidget):
             return
 
         if node in self.stl_actors and node in self.transforms:
-            print(f"正在更新节点 {node.name()} 的变换")
             current_transform = self.transforms[node]
             current_transform.DeepCopy(transform)
             self.stl_actors[node].SetUserTransform(current_transform)
@@ -341,7 +360,7 @@ class STLViewerWidget(QtWidgets.QWidget):
                                 self.update_coordinate_axes(world_pos)
                                 break
 
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
         else:
             print(f"警告：未找到节点 {node.name()} 对应的 STL 渲染或变换")
 
@@ -363,7 +382,7 @@ class STLViewerWidget(QtWidgets.QWidget):
                 self.update_coordinate_axes([0, 0, 0])
                 self.base_connected_node = None
 
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
         else:
             # 仅针对非 base_link 节点提示警告
             if not isinstance(node, BaseLinkNode):
@@ -407,7 +426,7 @@ class STLViewerWidget(QtWidgets.QWidget):
             self.apply_color_to_node(node)
 
             self.reset_camera()
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
             print(f"STL 文件加载并渲染完成：{node.stl_file}")
 
     def apply_color_to_node(self, node):
@@ -421,7 +440,7 @@ class STLViewerWidget(QtWidgets.QWidget):
             actor = self.stl_actors[node]
             actor.GetProperty().SetColor(*node.node_color)
             print(f"已将颜色应用到节点 {node.name()}：RGB({node.node_color[0]:.3f}, {node.node_color[1]:.3f}, {node.node_color[2]:.3f})")
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
 
     def remove_stl_for_node(self, node):
         """移除节点对应的STL模型"""
@@ -436,7 +455,7 @@ class STLViewerWidget(QtWidgets.QWidget):
                 self.update_coordinate_axes([0, 0, 0])
                 self.base_connected_node = None
 
-            self.vtkWidget.GetRenderWindow().Render()
+            self._request_render()
             print(f"已移除节点 {node.name()} 的 STL 模型")
 
     def setup_camera(self):
@@ -503,7 +522,7 @@ class STLViewerWidget(QtWidgets.QWidget):
                 actor.SetUserTransform(transform)
 
                 # 刷新视图
-                self.vtkWidget.GetRenderWindow().Render()
+                self._request_render()
                 print(f"节点 {node.name()} 的旋转轴已更新")
             else:
                 print(f"未找到节点 {node.name()} 对应的 STL 渲染或变换")
@@ -517,7 +536,7 @@ class STLViewerWidget(QtWidgets.QWidget):
         # 将取值范围 -100~100 转换为 0~1
         normalized_value = (value + 100) / 200.0
         self.renderer.SetBackground(normalized_value, normalized_value, normalized_value)
-        self.vtkWidget.GetRenderWindow().Render()
+        self._request_render()
 
     def open_urdf_loader_website(self):
         """打开 URDF Loaders 网站"""

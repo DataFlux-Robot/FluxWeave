@@ -36,6 +36,15 @@ from stl_metadata import extract_metadata_text
 from URDF_STLViewerWidget import STLViewerWidget
 
 
+JOINT_TYPE_CHOICES = [
+    ('revolute', '旋转关节'),
+    ('continuous', '连续旋转'),
+    ('prismatic', '滑动关节'),
+    ('fixed', '固定连接'),
+]
+JOINT_TYPE_LABEL_MAP = {value: label for value, label in JOINT_TYPE_CHOICES}
+
+
 # ---------------------------------------------------------------------------
 # Metadata helpers
 # ---------------------------------------------------------------------------
@@ -318,7 +327,7 @@ class ConnectorEditorDialog(QtWidgets.QDialog):
     def __init__(self, connector: ConnectorNode):
         super().__init__(connector.view.window())
         self.connector = connector
-        self.setWindowTitle('Connector Settings')
+        self.setWindowTitle('连接器设置')
         self.setModal(True)
         self.setMinimumWidth(320)
 
@@ -326,42 +335,43 @@ class ConnectorEditorDialog(QtWidgets.QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        info = QtWidgets.QGroupBox('Connection')
+        info = QtWidgets.QGroupBox('连接信息')
         info_layout = QtWidgets.QFormLayout(info)
         info_layout.setSpacing(4)
         info_layout.setContentsMargins(8, 8, 8, 8)
 
         parent_label, parent_name = self._describe_endpoint('parent')
         child_label, child_name = self._describe_endpoint('child')
-        info_layout.addRow('Parent:', QtWidgets.QLabel(parent_label))
-        info_layout.addRow('Child:', QtWidgets.QLabel(child_label))
+        info_layout.addRow('父节点：', QtWidgets.QLabel(parent_label))
+        info_layout.addRow('子节点：', QtWidgets.QLabel(child_label))
         parent_axis = ', '.join(f'{c:.4f}' for c in connector.parent_axis)
         child_axis = ', '.join(f'{c:.4f}' for c in connector.child_axis)
-        info_layout.addRow('Parent axis:', QtWidgets.QLabel(parent_axis))
-        info_layout.addRow('Child axis:', QtWidgets.QLabel(child_axis))
+        info_layout.addRow('父轴：', QtWidgets.QLabel(parent_axis))
+        info_layout.addRow('子轴：', QtWidgets.QLabel(child_axis))
         layout.addWidget(info)
 
         # Joint name/type
-        joint_box = QtWidgets.QGroupBox('Joint Definition')
+        joint_box = QtWidgets.QGroupBox('关节设置')
         joint_form = QtWidgets.QFormLayout(joint_box)
         joint_form.setSpacing(4)
         joint_form.setContentsMargins(8, 8, 8, 8)
 
         default_joint_name = connector.joint_name or f"{parent_name}_{child_name}".strip('_')
         self.joint_name_edit = QtWidgets.QLineEdit(default_joint_name)
-        joint_form.addRow('Joint name:', self.joint_name_edit)
+        joint_form.addRow('关节名称：', self.joint_name_edit)
 
         self.joint_type_combo = QtWidgets.QComboBox()
-        self.joint_type_combo.addItems(['revolute', 'continuous', 'prismatic', 'fixed'])
         current_type = connector.joint_type or 'revolute'
-        index = self.joint_type_combo.findText(current_type)
+        for value, label in JOINT_TYPE_CHOICES:
+            self.joint_type_combo.addItem(label, userData=value)
+        index = self.joint_type_combo.findData(current_type)
         if index != -1:
             self.joint_type_combo.setCurrentIndex(index)
-        joint_form.addRow('Joint type:', self.joint_type_combo)
+        joint_form.addRow('关节类型：', self.joint_type_combo)
         layout.addWidget(joint_box)
 
         # Offsets
-        offset_box = QtWidgets.QGroupBox('URDF offsets')
+        offset_box = QtWidgets.QGroupBox('URDF 偏移量')
         offset_layout = QtWidgets.QGridLayout(offset_box)
         offset_layout.setSpacing(4)
         offset_layout.setContentsMargins(8, 8, 8, 8)
@@ -373,11 +383,11 @@ class ConnectorEditorDialog(QtWidgets.QDialog):
         for col, label in enumerate(labels):
             offset_layout.addWidget(QtWidgets.QLabel(label), 0, col + 1)
 
-        offset_layout.addWidget(QtWidgets.QLabel('origin offset (m)'), 1, 0)
+        offset_layout.addWidget(QtWidgets.QLabel('原点偏移 (m)'), 1, 0)
         for col, spin in enumerate(self.offset_xyz_edits):
             offset_layout.addWidget(spin, 1, col + 1)
 
-        offset_layout.addWidget(QtWidgets.QLabel('rpy offset (deg)'), 2, 0)
+        offset_layout.addWidget(QtWidgets.QLabel('RPY 偏移 (deg)'), 2, 0)
         for col, spin in enumerate(self.offset_rpy_edits):
             offset_layout.addWidget(spin, 2, col + 1)
 
@@ -430,12 +440,15 @@ class ConnectorEditorDialog(QtWidgets.QDialog):
 
     def accept(self) -> None:
         self.connector.joint_name = self.joint_name_edit.text().strip()
-        self.connector.joint_type = self.joint_type_combo.currentText()
+        self.connector.joint_type = self.joint_type_combo.currentData()
         self.connector.offset_xyz = [spin.value() for spin in self.offset_xyz_edits]
         self.connector.offset_rpy = [math.radians(spin.value()) for spin in self.offset_rpy_edits]
         graph = getattr(self.connector, 'graph', None)
         if graph and hasattr(graph, 'recalculate_transforms'):
             graph.recalculate_transforms()
+            panel = getattr(graph, 'joint_panel', None)
+            if panel and hasattr(panel, 'refresh_from_graph'):
+                panel.refresh_from_graph(graph)
         super().accept()
 
 
@@ -451,7 +464,7 @@ class JointPanelV3(QtWidgets.QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        title = QtWidgets.QLabel('Joint Controls')
+        title = QtWidgets.QLabel('关节控制')
         font = title.font()
         font.setBold(True)
         title.setFont(font)
@@ -521,7 +534,8 @@ class JointPanelV3(QtWidgets.QWidget):
             if child_node:
                 child_name = getattr(child_node, 'link_name', child_node.name())
 
-        label = QtWidgets.QLabel(f'{parent_name} → {child_name}')
+        joint_label = JOINT_TYPE_LABEL_MAP.get(connector.joint_type, connector.joint_type)
+        label = QtWidgets.QLabel(f'{parent_name} → {child_name}（{joint_label}）')
         layout.addWidget(label)
 
         angle_layout = QtWidgets.QHBoxLayout()
@@ -586,13 +600,37 @@ class JointPanelV3(QtWidgets.QWidget):
         velocity_spin.setSingleStep(0.1)
         velocity_spin.setValue(max(0.0, float(connector.joint_velocity)))
 
-        limit_layout.addWidget(QtWidgets.QLabel('lower'), 0, 0)
+        if use_degrees:
+            limit_tip = '此处以度数输入，导出 URDF 时将自动转换为弧度。'
+            angle_tip = '滑块以度为单位，数值会自动转换为弧度并写入 URDF。'
+        elif connector.joint_type == 'prismatic':
+            limit_tip = '位移上下限（米），将直接写入 URDF。'
+            angle_tip = '当前关节位移（米），与下方滑块联动。'
+        else:
+            limit_tip = '角度上下限（弧度），将直接写入 URDF。'
+            angle_tip = '当前关节角度（弧度），与下方滑块联动。'
+
+        if connector.joint_type == 'continuous':
+            limit_tip = '连续旋转关节在 URDF 中不会写入上下限。'
+
+        lower_spin.setToolTip(limit_tip)
+        upper_spin.setToolTip(limit_tip)
+        slider.setToolTip(angle_tip)
+        spin.setToolTip(angle_tip)
+        effort_spin.setToolTip('施加在该关节上的最大力矩/力。')
+        velocity_spin.setToolTip('关节的最大速度，用于 URDF 限幅。')
+
+        if connector.joint_type == 'continuous':
+            lower_spin.setEnabled(False)
+            upper_spin.setEnabled(False)
+
+        limit_layout.addWidget(QtWidgets.QLabel('下限'), 0, 0)
         limit_layout.addWidget(lower_spin, 0, 1)
-        limit_layout.addWidget(QtWidgets.QLabel('upper'), 0, 2)
+        limit_layout.addWidget(QtWidgets.QLabel('上限'), 0, 2)
         limit_layout.addWidget(upper_spin, 0, 3)
-        limit_layout.addWidget(QtWidgets.QLabel('effort'), 1, 0)
+        limit_layout.addWidget(QtWidgets.QLabel('力矩/力'), 1, 0)
         limit_layout.addWidget(effort_spin, 1, 1)
-        limit_layout.addWidget(QtWidgets.QLabel('velocity'), 1, 2)
+        limit_layout.addWidget(QtWidgets.QLabel('速度'), 1, 2)
         limit_layout.addWidget(velocity_spin, 1, 3)
 
         layout.addLayout(limit_layout)
@@ -626,6 +664,17 @@ class JointPanelV3(QtWidgets.QWidget):
             lower_val, upper_val = _current_limits()
             return min(max(value, lower_val), upper_val)
 
+        def _trigger_recalc(immediate: bool = False) -> None:
+            graph = connector.graph
+            if not graph:
+                return
+            if not immediate:
+                scheduler = getattr(graph, 'schedule_recalculate_transforms', None)
+                if callable(scheduler):
+                    scheduler()
+                    return
+            graph.recalculate_transforms()
+
         def _update_slider_range() -> None:
             lower_val, upper_val = _current_limits()
             slider_min = _value_to_slider(lower_val)
@@ -651,8 +700,8 @@ class JointPanelV3(QtWidgets.QWidget):
             if not math.isclose(clamped, connector.joint_angle, rel_tol=1e-9, abs_tol=1e-9):
                 connector.joint_angle = clamped
                 _sync_angle_widgets(clamped)
-                if trigger_transform and connector.graph:
-                    connector.graph.recalculate_transforms()
+                if trigger_transform:
+                    _trigger_recalc()
             else:
                 _sync_angle_widgets(clamped)
 
@@ -671,8 +720,7 @@ class JointPanelV3(QtWidgets.QWidget):
                 spin.blockSignals(False)
             if not math.isclose(connector.joint_angle, clamped, rel_tol=1e-9, abs_tol=1e-9):
                 connector.joint_angle = clamped
-                if connector.graph:
-                    connector.graph.recalculate_transforms()
+                _trigger_recalc()
 
         def on_spin(val):
             clamped = _clamp_to_limits(val)
@@ -687,8 +735,7 @@ class JointPanelV3(QtWidgets.QWidget):
                 slider.blockSignals(False)
             if not math.isclose(connector.joint_angle, clamped, rel_tol=1e-9, abs_tol=1e-9):
                 connector.joint_angle = clamped
-                if connector.graph:
-                    connector.graph.recalculate_transforms()
+                _trigger_recalc()
 
         def on_lower(val):
             raw = math.radians(val) if use_degrees else float(val)
@@ -766,7 +813,7 @@ class AssemblerGraphV3(NodeGraph):
 
     def __init__(self):
         super().__init__()
-        self.widget.setWindowTitle('URDF Kitchen Assembler V3')
+        self.widget.setWindowTitle('URDF 装配器 V3')
         self.base_node: Optional[BaseLinkNode] = None
         self.stl_viewer: Optional[STLViewerWidget] = None
         self.joint_panel = None
@@ -774,6 +821,9 @@ class AssemblerGraphV3(NodeGraph):
         self._suspend_updates = False
         self._pending_recalc = False
         self._pending_notify = False
+        self._recalc_timer = QtCore.QTimer()
+        self._recalc_timer.setSingleShot(True)
+        self._recalc_timer.timeout.connect(self._on_recalc_timeout)
 
         # Register node classes
         for node_cls in (BaseLinkNode, PartNode, ConnectorNode):
@@ -781,6 +831,9 @@ class AssemblerGraphV3(NodeGraph):
 
         # Track connectors for quick lookup
         self.connector_nodes: List[ConnectorNode] = []
+        self._loading_project = False
+        debug_flag = os.environ.get('FLUXHWEAVE_DEBUG', '1')
+        self.debug_logging = str(debug_flag).strip().lower() not in ('', '0', 'false', 'off', 'no')
 
         self.port_connected.connect(self._on_port_connected)
         self.port_disconnected.connect(self._on_port_disconnected)
@@ -789,6 +842,123 @@ class AssemblerGraphV3(NodeGraph):
         self._install_context_menu()
 
     # -- Node management -------------------------------------------------
+    def set_debug_logging(self, enabled: bool) -> None:
+        self.debug_logging = bool(enabled)
+
+    def _debug(self, message: str) -> None:
+        if self.debug_logging:
+            print(f'[AssemblerGraphV3] {message}')
+
+    def _validate_connector_links(self) -> List[str]:
+        issues: List[str] = []
+        for connector in list(self.connector_nodes):
+            if connector not in self.all_nodes():
+                continue
+            parent_expected = connector.parent_node_id is not None
+            child_expected = connector.child_node_id is not None
+            parent_connected = False
+            child_connected = False
+            try:
+                parent_port = connector.get_input('parent')
+            except Exception:
+                parent_port = None
+            if parent_port:
+                try:
+                    parent_connected = any(parent_port.connected_ports())
+                except Exception:
+                    parent_connected = False
+            try:
+                child_port = connector.get_output('child')
+            except Exception:
+                child_port = None
+            if child_port:
+                try:
+                    child_connected = any(child_port.connected_ports())
+                except Exception:
+                    child_connected = False
+            if parent_expected and not parent_connected:
+                issues.append(
+                    f"Connector '{connector.name()}' expects parent node {connector.parent_node_id} but port has no connection"
+                )
+            if child_expected and not child_connected:
+                issues.append(
+                    f"Connector '{connector.name()}' expects child node {connector.child_node_id} but port has no connection"
+                )
+        return issues
+
+    def debug_dump_state(self, label: str = '') -> None:
+        if not self.debug_logging:
+            return
+        header = f'--- Graph State {label} ---' if label else '--- Graph State ---'
+        print(f'[AssemblerGraphV3] {header}')
+        nodes = list(self.all_nodes())
+        print(f'[AssemblerGraphV3] Total nodes: {len(nodes)} (connectors: {len(self.connector_nodes)})')
+        for connector in self.connector_nodes:
+            if connector not in nodes:
+                continue
+            parent_info = 'None'
+            child_info = 'None'
+            parent_connected = 0
+            child_connected = 0
+            try:
+                parent_port = connector.get_input('parent')
+                if parent_port:
+                    parent_connected = len(parent_port.connected_ports())
+            except Exception:
+                parent_port = None
+            try:
+                child_port = connector.get_output('child')
+                if child_port:
+                    child_connected = len(child_port.connected_ports())
+            except Exception:
+                child_port = None
+
+            if connector.parent_node_id is not None:
+                parent_info = f'id={connector.parent_node_id}, point={connector.parent_point}'
+            if connector.child_node_id is not None:
+                child_info = f'id={connector.child_node_id}, point={connector.child_point}'
+
+            print(
+                f"[AssemblerGraphV3]   Connector '{connector.name()}': parent({parent_info}) connections={parent_connected}; "
+                f"child({child_info}) connections={child_connected}"
+            )
+        issues = self._validate_connector_links()
+        if issues:
+            print('[AssemblerGraphV3] Connector validation warnings:')
+            for issue in issues:
+                print(f'[AssemblerGraphV3]   WARNING: {issue}')
+        else:
+            print('[AssemblerGraphV3] Connector validation passed (all expected links present).')
+
+        connection_count = 0
+        for node in nodes:
+            for port in node.output_ports():
+                connection_count += len(port.connected_ports())
+        print(f'[AssemblerGraphV3] Total output→input connections observed: {connection_count}')
+
+    def _connect_ports(self, out_port, in_port, *, emit_signal=True) -> bool:
+        if not out_port or not in_port:
+            return False
+        try:
+            out_port.connect_to(in_port, push_undo=False, emit_signal=emit_signal)
+            return True
+        except Exception as exc:
+            self._debug(f"_connect_ports failed: {exc}")
+            return False
+
+    def _on_recalc_timeout(self) -> None:
+        if self._suspend_updates:
+            self._pending_recalc = True
+            return
+        self.recalculate_transforms()
+
+    def schedule_recalculate_transforms(self, delay_ms: int = 16) -> None:
+        if self._suspend_updates:
+            self._pending_recalc = True
+            return
+        delay_ms = max(0, int(delay_ms))
+        self._recalc_timer.start(delay_ms)
+
     def _ensure_base_node(self) -> None:
         if self.base_node and self.base_node in self.all_nodes():
             return
@@ -928,10 +1098,17 @@ class AssemblerGraphV3(NodeGraph):
     def _on_port_connected(self, input_port, output_port):
         parent_node = output_port.node()
         child_node = input_port.node()
+        loading_project = getattr(self, '_loading_project', False)
 
         if isinstance(parent_node, PartNode) and isinstance(child_node, ConnectorNode):
+            if loading_project and getattr(child_node, '_restored_parent_from_payload', False):
+                child_node.parent_node_id = parent_node.id
+                return
             self._connect_parent_to_connector(parent_node, output_port, child_node)
         elif isinstance(parent_node, ConnectorNode) and isinstance(child_node, PartNode):
+            if loading_project and getattr(parent_node, '_restored_child_from_payload', False):
+                parent_node.child_node_id = child_node.id
+                return
             self._connect_connector_to_child(parent_node, child_node, input_port)
         elif isinstance(parent_node, BaseLinkNode) and isinstance(child_node, ConnectorNode):
             child_node.parent_node_id = parent_node.id
@@ -1078,23 +1255,45 @@ class AssemblerGraphV3(NodeGraph):
                     }
                 )
             elif isinstance(node, ConnectorNode):
-                nodes_data.append(
-                    {
-                        'uid': str(node.id),
-                        'type': 'connector',
-                        'name': node.name(),
-                        'pos': self._node_pos_list(node),
-                        'joint_type': node.joint_type,
-                        'joint_name': node.joint_name,
-                        'joint_angle': float(node.joint_angle),
-                        'offset_xyz': [float(v) for v in node.offset_xyz],
-                        'offset_rpy': [float(v) for v in node.offset_rpy],
-                        'joint_limit_lower': float(node.joint_limit_lower),
-                        'joint_limit_upper': float(node.joint_limit_upper),
-                        'joint_effort': float(node.joint_effort),
-                        'joint_velocity': float(node.joint_velocity),
-                    }
-                )
+                connector_payload: Dict[str, Any] = {
+                    'uid': str(node.id),
+                    'type': 'connector',
+                    'name': node.name(),
+                    'pos': self._node_pos_list(node),
+                    'joint_type': node.joint_type,
+                    'joint_name': node.joint_name,
+                    'joint_angle': float(node.joint_angle),
+                    'offset_xyz': [float(v) for v in node.offset_xyz],
+                    'offset_rpy': [float(v) for v in node.offset_rpy],
+                    'joint_limit_lower': float(node.joint_limit_lower),
+                    'joint_limit_upper': float(node.joint_limit_upper),
+                    'joint_effort': float(node.joint_effort),
+                    'joint_velocity': float(node.joint_velocity),
+                    'parent_local_xyz': [float(v) for v in node.parent_local_xyz],
+                    'parent_local_rpy': [float(v) for v in node.parent_local_rpy],
+                    'parent_axis': [float(v) for v in node.parent_axis],
+                    'child_local_xyz': [float(v) for v in node.child_local_xyz],
+                    'child_local_rpy': [float(v) for v in node.child_local_rpy],
+                    'child_axis': [float(v) for v in node.child_axis],
+                }
+
+                parent_binding: Dict[str, Any] = {}
+                if node.parent_node_id is not None:
+                    parent_binding['node_uid'] = str(node.parent_node_id)
+                if node.parent_point:
+                    parent_binding['point'] = node.parent_point
+                if parent_binding:
+                    connector_payload['parent_binding'] = parent_binding
+
+                child_binding: Dict[str, Any] = {}
+                if node.child_node_id is not None:
+                    child_binding['node_uid'] = str(node.child_node_id)
+                if node.child_point:
+                    child_binding['point'] = node.child_point
+                if child_binding:
+                    connector_payload['child_binding'] = child_binding
+
+                nodes_data.append(connector_payload)
 
         connections: List[Dict[str, Any]] = []
         for node in self.all_nodes():
@@ -1109,6 +1308,8 @@ class AssemblerGraphV3(NodeGraph):
                         }
                     )
 
+        self.debug_dump_state('serialize_project (pre-save)')
+
         return {
             'nodes': nodes_data,
             'connections': connections,
@@ -1121,6 +1322,18 @@ class AssemblerGraphV3(NodeGraph):
 
             node_map: Dict[str, BaseNode] = {}
             connector_configs: List[Tuple[ConnectorNode, Dict[str, Any]]] = []
+
+            def _tuple_from_values(values, size: int) -> Tuple[float, ...]:
+                result: List[float] = []
+                if isinstance(values, (list, tuple)):
+                    for idx in range(min(len(values), size)):
+                        try:
+                            result.append(float(values[idx]))
+                        except Exception:
+                            result.append(0.0)
+                while len(result) < size:
+                    result.append(0.0)
+                return tuple(result)
 
             for node_info in payload.get('nodes', []):
                 node_type = node_info.get('type')
@@ -1171,34 +1384,13 @@ class AssemblerGraphV3(NodeGraph):
                     node_map[uid] = connector_node
                     connector_configs.append((connector_node, node_info))
 
-            for connection in payload.get('connections', []):
-                from_uid = str(connection.get('from_uid')) if connection.get('from_uid') is not None else None
-                to_uid = str(connection.get('to_uid')) if connection.get('to_uid') is not None else None
-                if not from_uid or not to_uid:
-                    continue
-                from_node = node_map.get(from_uid)
-                to_node = node_map.get(to_uid)
-                if not from_node or not to_node:
-                    continue
-                from_port = connection.get('from_port')
-                to_port = connection.get('to_port')
-                if not from_port or not to_port:
-                    continue
-                out_port = from_node.get_output(from_port)
-                in_port = to_node.get_input(to_port)
-                if out_port and in_port:
-                    try:
-                        self.connect_ports(out_port, in_port)
-                    except Exception as exc:
-                        print(f'Warning: failed to reconnect {from_port} -> {to_port}: {exc}')
-
             for connector_node, cfg in connector_configs:
                 connector_node.joint_type = cfg.get('joint_type', connector_node.joint_type)
                 connector_node.joint_name = cfg.get('joint_name', connector_node.joint_name)
                 if 'offset_xyz' in cfg:
-                    connector_node.offset_xyz = [float(v) for v in cfg.get('offset_xyz', connector_node.offset_xyz)]
+                    connector_node.offset_xyz = [float(v) for v in (cfg.get('offset_xyz') or connector_node.offset_xyz)]
                 if 'offset_rpy' in cfg:
-                    connector_node.offset_rpy = [float(v) for v in cfg.get('offset_rpy', connector_node.offset_rpy)]
+                    connector_node.offset_rpy = [float(v) for v in (cfg.get('offset_rpy') or connector_node.offset_rpy)]
                 connector_node.joint_limit_lower = float(cfg.get('joint_limit_lower', connector_node.joint_limit_lower))
                 connector_node.joint_limit_upper = float(cfg.get('joint_limit_upper', connector_node.joint_limit_upper))
                 connector_node.joint_effort = float(cfg.get('joint_effort', connector_node.joint_effort))
@@ -1207,6 +1399,165 @@ class AssemblerGraphV3(NodeGraph):
                 lower_val = connector_node.joint_limit_lower
                 upper_val = connector_node.joint_limit_upper
                 connector_node.joint_angle = min(max(angle_val, lower_val), upper_val)
+
+                parent_binding = cfg.get('parent_binding') or {}
+                parent_uid = parent_binding.get('node_uid', parent_binding.get('node_id'))
+                parent_direct = any(key in cfg for key in ('parent_local_xyz', 'parent_local_rpy', 'parent_axis'))
+                restored_parent = False
+                if parent_uid is not None:
+                    parent_node = node_map.get(str(parent_uid))
+                    if parent_node:
+                        connector_node.parent_node_id = parent_node.id
+                        connector_node.parent_point = parent_binding.get('point')
+                        if 'parent_local_xyz' in cfg:
+                            connector_node.parent_local_xyz = _tuple_from_values(cfg['parent_local_xyz'], 3)
+                        if 'parent_local_rpy' in cfg:
+                            connector_node.parent_local_rpy = _tuple_from_values(cfg['parent_local_rpy'], 3)
+                        if 'parent_axis' in cfg:
+                            connector_node.parent_axis = _tuple_from_values(cfg['parent_axis'], 3)
+                        if parent_direct:
+                            restored_parent = True
+                        elif isinstance(parent_node, PartNode) and connector_node.parent_point:
+                            port_name = f'P:{connector_node.parent_point}'
+                            point_def = parent_node.find_point_by_port(port_name)
+                            if point_def:
+                                connector_node.capture_from_parent(point_def)
+                                self._debug(
+                                    f"Recovered parent capture for connector '{connector_node.name()}' via point '{connector_node.parent_point}'"
+                                )
+                            else:
+                                self._debug(
+                                    f"Unable to locate parent point '{connector_node.parent_point}' on node '{parent_node.name()}' during project load"
+                                )
+                        else:
+                            self._debug(
+                                f"Connector '{connector_node.name()}' parent binding lacks direct data and cannot be recomputed (node type: {type(parent_node).__name__})"
+                            )
+                    else:
+                        self._debug(
+                            f"Connector '{connector_node.name()}' references parent uid '{parent_uid}' but node was not created."
+                        )
+                else:
+                    self._debug(f"Connector '{connector_node.name()}' has no parent binding data.")
+                connector_node._restored_parent_from_payload = bool(restored_parent)
+
+                child_binding = cfg.get('child_binding') or {}
+                child_uid = child_binding.get('node_uid', child_binding.get('node_id'))
+                child_direct = any(key in cfg for key in ('child_local_xyz', 'child_local_rpy', 'child_axis'))
+                restored_child = False
+                if child_uid is not None:
+                    child_node = node_map.get(str(child_uid))
+                    if child_node:
+                        connector_node.child_node_id = child_node.id
+                        connector_node.child_point = child_binding.get('point')
+                        if 'child_local_xyz' in cfg:
+                            connector_node.child_local_xyz = _tuple_from_values(cfg['child_local_xyz'], 3)
+                        if 'child_local_rpy' in cfg:
+                            connector_node.child_local_rpy = _tuple_from_values(cfg['child_local_rpy'], 3)
+                        if 'child_axis' in cfg:
+                            connector_node.child_axis = _tuple_from_values(cfg['child_axis'], 3)
+                        if child_direct:
+                            restored_child = True
+                        elif isinstance(child_node, PartNode) and connector_node.child_point:
+                            port_name = f'C:{connector_node.child_point}'
+                            point_def = child_node.find_point_by_port(port_name)
+                            if point_def:
+                                connector_node.capture_from_child(point_def)
+                                self._debug(
+                                    f"Recovered child capture for connector '{connector_node.name()}' via point '{connector_node.child_point}'"
+                                )
+                            else:
+                                self._debug(
+                                    f"Unable to locate child point '{connector_node.child_point}' on node '{child_node.name()}' during project load"
+                                )
+                        else:
+                            self._debug(
+                                f"Connector '{connector_node.name()}' child binding lacks direct data and cannot be recomputed (node type: {type(child_node).__name__})"
+                            )
+                    else:
+                        self._debug(
+                            f"Connector '{connector_node.name()}' references child uid '{child_uid}' but node was not created."
+                        )
+                else:
+                    self._debug(f"Connector '{connector_node.name()}' has no child binding data.")
+                connector_node._restored_child_from_payload = bool(restored_child)
+
+            id_lookup: Dict[str, BaseNode] = {str(node.id): node for node in self.all_nodes()}
+
+            def _ports_already_connected(out_port, in_port) -> bool:
+                try:
+                    if out_port and in_port:
+                        for connected in in_port.connected_ports():
+                            if connected is out_port:
+                                return True
+                        for connected in out_port.connected_ports():
+                            if connected is in_port:
+                                return True
+                except Exception:
+                    return False
+                return False
+
+            def _connect_direct(out_node: BaseNode, out_name: str, in_node: BaseNode, in_name: str) -> None:
+                if not out_node or not in_node:
+                    return
+                out_port = out_node.get_output(out_name) if out_name else None
+                in_port = in_node.get_input(in_name) if in_name else None
+                if not out_port or not in_port:
+                    return
+                if _ports_already_connected(out_port, in_port):
+                    return
+                if not self._connect_ports(out_port, in_port, emit_signal=False):
+                    print(f'Warning: failed to restore connection {out_name} -> {in_name}')
+
+            self._loading_project = True
+            try:
+                for connector_node, _ in connector_configs:
+                    parent_id = connector_node.parent_node_id
+                    parent_node = id_lookup.get(str(parent_id)) if parent_id is not None else None
+                    if parent_node:
+                        if isinstance(parent_node, BaseLinkNode):
+                            parent_port_name = 'root'
+                        elif isinstance(parent_node, PartNode) and connector_node.parent_point:
+                            parent_port_name = f'P:{connector_node.parent_point}'
+                        else:
+                            parent_port_name = None
+                        if parent_port_name:
+                            _connect_direct(parent_node, parent_port_name, connector_node, 'parent')
+
+                    child_id = connector_node.child_node_id
+                    child_node = id_lookup.get(str(child_id)) if child_id is not None else None
+                    if child_node and connector_node.child_point:
+                        child_port_name = f'C:{connector_node.child_point}'
+                        _connect_direct(connector_node, 'child', child_node, child_port_name)
+
+                for connector_node, _ in connector_configs:
+                    if hasattr(connector_node, '_restored_parent_from_payload'):
+                        delattr(connector_node, '_restored_parent_from_payload')
+                    if hasattr(connector_node, '_restored_child_from_payload'):
+                        delattr(connector_node, '_restored_child_from_payload')
+
+                for connection in payload.get('connections', []):
+                    from_uid = str(connection.get('from_uid')) if connection.get('from_uid') is not None else None
+                    to_uid = str(connection.get('to_uid')) if connection.get('to_uid') is not None else None
+                    if not from_uid or not to_uid:
+                        continue
+                    from_node = node_map.get(from_uid)
+                    to_node = node_map.get(to_uid)
+                    if not from_node or not to_node:
+                        continue
+                    from_port = connection.get('from_port')
+                    to_port = connection.get('to_port')
+                    if not from_port or not to_port:
+                        continue
+                    out_port = from_node.get_output(from_port)
+                    in_port = to_node.get_input(to_port)
+                    if out_port and in_port and not _ports_already_connected(out_port, in_port):
+                        if not self._connect_ports(out_port, in_port, emit_signal=False):
+                            print(f'Warning: failed to reconnect {from_port} -> {to_port}')
+            finally:
+                self._loading_project = False
+
+            self.debug_dump_state('deserialize_project (after rebuild)')
 
             self.connector_nodes = [c for c in self.connector_nodes if c in self.all_nodes()]
             self._pending_recalc = True
@@ -1219,57 +1570,62 @@ class AssemblerGraphV3(NodeGraph):
         if self._suspend_updates:
             self._pending_recalc = True
             return
-        if not self.stl_viewer:
+
+        timer = getattr(self, '_recalc_timer', None)
+        if timer and timer.isActive():
+            timer.stop()
+
+        viewer = self.stl_viewer
+        if not viewer:
             return
 
-        self.connector_nodes = [c for c in self.connector_nodes if c in self.all_nodes()]
+        viewer.begin_batch_updates()
+        try:
+            self.connector_nodes = [c for c in self.connector_nodes if c in self.all_nodes()]
 
-        # Reset all parts to their local link→mesh transform first.
-        for node in self.all_nodes():
-            if isinstance(node, PartNode):
-                base_matrix = getattr(node, 'link_to_mesh_matrix', np.identity(4))
-                self.stl_viewer.update_stl_transform(node, self._matrix_to_vtk(base_matrix))
+            for node in self.all_nodes():
+                if isinstance(node, PartNode):
+                    base_matrix = getattr(node, 'link_to_mesh_matrix', np.identity(4))
+                    viewer.update_stl_transform(node, self._matrix_to_vtk(base_matrix))
 
-        transforms: Dict[int, np.ndarray] = {}
-        base = self.base_node
-        if not base:
-            return
+            transforms: Dict[int, np.ndarray] = {}
+            base = self.base_node
+            if not base:
+                return
 
-        base_matrix = np.identity(4)
-        transforms[base.id] = base_matrix
+            base_matrix = np.identity(4)
+            transforms[base.id] = base_matrix
 
-        # Traverse connectors breadth-first starting from base
-        queue: List[int] = [base.id]
-        visited_connectors: set[ConnectorNode] = set()
+            queue: List[int] = [base.id]
+            visited_connectors: set[ConnectorNode] = set()
 
-        while queue:
-            parent_id = queue.pop(0)
-            parent_matrix = transforms.get(parent_id)
-            if parent_matrix is None:
-                continue
-
-            for connector in self.connector_nodes:
-                if connector in visited_connectors:
-                    continue
-                if connector.parent_node_id != parent_id:
-                    continue
-                if connector.child_node_id is None:
-                    continue
-                child_node = self.get_node_by_id(connector.child_node_id)
-                if not isinstance(child_node, PartNode):
+            while queue:
+                parent_id = queue.pop(0)
+                parent_matrix = transforms.get(parent_id)
+                if parent_matrix is None:
                     continue
 
-                visited_connectors.add(connector)
-                relative_matrix = self._compute_relative_matrix(connector)
-                child_matrix = parent_matrix @ relative_matrix
-                transforms[child_node.id] = child_matrix
-                queue.append(child_node.id)
+                for connector in self.connector_nodes:
+                    if connector in visited_connectors:
+                        continue
+                    if connector.parent_node_id != parent_id:
+                        continue
+                    if connector.child_node_id is None:
+                        continue
+                    child_node = self.get_node_by_id(connector.child_node_id)
+                    if not isinstance(child_node, PartNode):
+                        continue
 
-                final_matrix = child_matrix @ getattr(child_node, 'link_to_mesh_matrix', np.identity(4))
-                vtk_transform = self._matrix_to_vtk(final_matrix)
-                self.stl_viewer.update_stl_transform(child_node, vtk_transform)
+                    visited_connectors.add(connector)
+                    relative_matrix = self._compute_relative_matrix(connector)
+                    child_matrix = parent_matrix @ relative_matrix
+                    transforms[child_node.id] = child_matrix
+                    queue.append(child_node.id)
 
-        self.stl_viewer.vtkWidget.GetRenderWindow().Render()
+                    final_matrix = child_matrix @ getattr(child_node, 'link_to_mesh_matrix', np.identity(4))
+                    viewer.update_stl_transform(child_node, self._matrix_to_vtk(final_matrix))
+        finally:
+            viewer.end_batch_updates()
 
     # -- Math helpers ----------------------------------------------------
     @staticmethod
@@ -1494,7 +1850,7 @@ class AssemblerWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('URDF Kitchen Assembler V3')
+        self.setWindowTitle('URDF 装配器 V3')
         self.resize(1500, 900)
 
         self.viewer = STLViewerWidget(self)
@@ -1519,37 +1875,37 @@ class AssemblerWindow(QtWidgets.QMainWindow):
         left_panel.setSpacing(6)
         main_layout.addLayout(left_panel, 0)
 
-        import_btn = QtWidgets.QPushButton('Import STL Part')
+        import_btn = QtWidgets.QPushButton('导入 STL 部件')
         import_btn.clicked.connect(self._on_import_part)
         left_panel.addWidget(import_btn)
 
-        connector_btn = QtWidgets.QPushButton('Add Connector')
+        connector_btn = QtWidgets.QPushButton('添加连接器')
         connector_btn.clicked.connect(self._on_add_connector)
         left_panel.addWidget(connector_btn)
 
-        project_label = QtWidgets.QLabel('Project name:')
+        project_label = QtWidgets.QLabel('项目名称：')
         left_panel.addWidget(project_label)
         self.project_name_edit = QtWidgets.QLineEdit('my_project')
         left_panel.addWidget(self.project_name_edit)
 
-        self.open_project_btn = QtWidgets.QPushButton('Open Project...')
+        self.open_project_btn = QtWidgets.QPushButton('打开项目...')
         self.open_project_btn.clicked.connect(self._on_open_project)
         left_panel.addWidget(self.open_project_btn)
 
-        self.save_project_btn = QtWidgets.QPushButton('Save Project...')
+        self.save_project_btn = QtWidgets.QPushButton('保存项目...')
         self.save_project_btn.clicked.connect(self._on_save_project)
         left_panel.addWidget(self.save_project_btn)
 
-        self.auto_color_checkbox = QtWidgets.QCheckBox('Auto color preview')
-        self.auto_color_checkbox.setToolTip('Auto-assign distinct colors to loaded parts in the preview window.')
+        self.auto_color_checkbox = QtWidgets.QCheckBox('预览自动着色')
+        self.auto_color_checkbox.setToolTip('在预览窗口中为已加载部件自动分配不同颜色。')
         self.auto_color_checkbox.stateChanged.connect(self._apply_preview_colors)
         left_panel.addWidget(self.auto_color_checkbox)
 
-        self.calu_btn = QtWidgets.QPushButton('Calu URDF')
+        self.calu_btn = QtWidgets.QPushButton('生成 URDF')
         self.calu_btn.clicked.connect(self._on_calu)
         left_panel.addWidget(self.calu_btn)
 
-        self.save_btn = QtWidgets.QPushButton('Save URDF...')
+        self.save_btn = QtWidgets.QPushButton('保存 URDF...')
         self.save_btn.clicked.connect(self._on_save_urdf)
         left_panel.addWidget(self.save_btn)
 
@@ -1574,9 +1930,9 @@ class AssemblerWindow(QtWidgets.QMainWindow):
     def _on_import_part(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            'Select STL file',
+            '选择 STL 文件',
             '',
-            'STL Files (*.stl);;All Files (*)',
+            'STL 文件 (*.stl);;所有文件 (*)',
         )
         if not path:
             return
@@ -1586,8 +1942,8 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             traceback.print_exc()
             QtWidgets.QMessageBox.critical(
                 self,
-                'Import Failed',
-                f'无法载入以下 STL: \n{path}\n\n{exc}',
+                '导入失败',
+                f'无法载入以下 STL：\n{path}\n\n{exc}',
             )
             return
 
@@ -1602,8 +1958,8 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             if show_message:
                 QtWidgets.QMessageBox.warning(
                     self,
-                    'Import STL',
-                    f'未找到 STL 文件:\n{path}',
+                    '导入 STL',
+                    f'未找到 STL 文件：\n{path}',
                 )
             return False
 
@@ -1614,8 +1970,8 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             if show_message:
                 QtWidgets.QMessageBox.critical(
                     self,
-                    'Import Failed',
-                    f'无法载入以下 STL: \n{path}\n\n{exc}',
+                    '导入失败',
+                    f'无法载入以下 STL：\n{path}\n\n{exc}',
                 )
             return False
 
@@ -1653,13 +2009,13 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             traceback.print_exc()
             QtWidgets.QMessageBox.critical(
                 self,
-                'URDF Generation Failed',
-                f'生成 URDF 失败:\n{exc}',
+                '生成 URDF 失败',
+                f'生成 URDF 失败：\n{exc}',
             )
             return
 
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle('URDF Preview')
+        dialog.setWindowTitle('URDF 预览')
         dialog.resize(720, 640)
         layout = QtWidgets.QVBoxLayout(dialog)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -1674,8 +2030,8 @@ class AssemblerWindow(QtWidgets.QMainWindow):
         layout.addWidget(text_edit)
 
         button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
-        btn_copy = button_box.addButton('Copy', QtWidgets.QDialogButtonBox.ActionRole)
-        btn_save = button_box.addButton('Save...', QtWidgets.QDialogButtonBox.ActionRole)
+        btn_copy = button_box.addButton('复制', QtWidgets.QDialogButtonBox.ActionRole)
+        btn_save = button_box.addButton('保存...', QtWidgets.QDialogButtonBox.ActionRole)
         button_box.rejected.connect(dialog.reject)
         layout.addWidget(button_box)
 
@@ -1684,16 +2040,16 @@ class AssemblerWindow(QtWidgets.QMainWindow):
         def save_to_file():
             path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 dialog,
-                'Save URDF',
+                '保存 URDF',
                 'robot.urdf',
-                'URDF Files (*.urdf);;All Files (*)',
+                'URDF 文件 (*.urdf);;所有文件 (*)',
             )
             if path:
                 try:
                     with open(path, 'w', encoding='utf-8') as fh:
                         fh.write(urdf_text)
                 except Exception as exc:
-                    QtWidgets.QMessageBox.critical(dialog, 'Save Failed', str(exc))
+                    QtWidgets.QMessageBox.critical(dialog, '保存失败', str(exc))
 
         btn_save.clicked.connect(save_to_file)
 
@@ -1708,9 +2064,9 @@ class AssemblerWindow(QtWidgets.QMainWindow):
         default_filename = f'{project_name}.json'
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            'Save Project',
+            '保存项目',
             os.path.join(default_dir, default_filename),
-            'URDF Kitchen Project (*.json);;All Files (*)',
+            'URDF 装配项目 (*.json);;所有文件 (*)',
         )
         if not path:
             return
@@ -1720,7 +2076,7 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             graph_payload = self.graph.serialize_project(base_dir)
         except Exception as exc:
             traceback.print_exc()
-            QtWidgets.QMessageBox.critical(self, 'Save Project', f'Failed to serialize project:\n{exc}')
+            QtWidgets.QMessageBox.critical(self, '保存项目', f'序列化项目失败：\n{exc}')
             return
 
         payload = {
@@ -1734,45 +2090,50 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             with open(path, 'w', encoding='utf-8') as fh:
                 json.dump(payload, fh, indent=2)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self, 'Save Project', f'Failed to write project:\n{exc}')
+            QtWidgets.QMessageBox.critical(self, '保存项目', f'写入项目失败：\n{exc}')
             return
 
         self.project_file_path = path
-        QtWidgets.QMessageBox.information(self, 'Save Project', f'Project saved to:\n{path}')
+        QtWidgets.QMessageBox.information(self, '保存项目', f'项目已保存至：\n{path}')
 
-    def _on_open_project(self):
-        default_dir = os.path.dirname(self.project_file_path) if self.project_file_path else os.getcwd()
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            'Open Project',
-            default_dir,
-            'URDF Kitchen Project (*.json);;All Files (*)',
-        )
+    def load_project_from_path(self, path: str, show_messages: bool = True) -> bool:
         if not path:
-            return
+            return False
+        if not os.path.exists(path):
+            if show_messages:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    '打开项目',
+                    f'未找到项目文件：\n{path}',
+                )
+            return False
 
         try:
             with open(path, 'r', encoding='utf-8') as fh:
                 payload = json.load(fh)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self, 'Open Project', f'Failed to read project:\n{exc}')
-            return
+            if show_messages:
+                QtWidgets.QMessageBox.critical(self, '打开项目', f'读取项目失败：\n{exc}')
+            return False
 
         graph_payload = payload.get('graph')
         if not isinstance(graph_payload, dict):
-            QtWidgets.QMessageBox.critical(self, 'Open Project', 'Project file is missing graph data.')
-            return
+            if show_messages:
+                QtWidgets.QMessageBox.critical(self, '打开项目', '项目文件缺少图形数据。')
+            return False
 
-        base_dir = os.path.dirname(path)
+        base_dir = os.path.dirname(path) or os.getcwd()
         try:
             self.graph.deserialize_project(graph_payload, base_dir)
         except FileNotFoundError as exc:
-            QtWidgets.QMessageBox.critical(self, 'Open Project', f'Missing asset:\n{exc}')
-            return
+            if show_messages:
+                QtWidgets.QMessageBox.critical(self, '打开项目', f'缺少资源：\n{exc}')
+            return False
         except Exception as exc:
             traceback.print_exc()
-            QtWidgets.QMessageBox.critical(self, 'Open Project', f'Failed to load project:\n{exc}')
-            return
+            if show_messages:
+                QtWidgets.QMessageBox.critical(self, '打开项目', f'加载项目失败：\n{exc}')
+            return False
 
         project_name = payload.get('project_name') or 'my_project'
         self.project_name_edit.setText(project_name)
@@ -1784,7 +2145,23 @@ class AssemblerWindow(QtWidgets.QMainWindow):
 
         self.project_file_path = path
         self.joint_panel.refresh_from_graph(self.graph)
-        QtWidgets.QMessageBox.information(self, 'Open Project', f'Project loaded from:\n{path}')
+        self.graph.debug_dump_state('after load_project_from_path')
+
+        if show_messages:
+            QtWidgets.QMessageBox.information(self, '打开项目', f'项目已加载：\n{path}')
+        return True
+
+    def _on_open_project(self):
+        default_dir = os.path.dirname(self.project_file_path) if self.project_file_path else os.getcwd()
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            '打开项目',
+            default_dir,
+            'URDF 装配项目 (*.json);;所有文件 (*)',
+        )
+        if not path:
+            return
+        self.load_project_from_path(path)
 
     def _project_name(self) -> str:
         text = ''
@@ -1803,14 +2180,14 @@ class AssemblerWindow(QtWidgets.QMainWindow):
 
         parts = [node for node in self.graph.all_nodes() if isinstance(node, PartNode)]
         if not parts:
-            QtWidgets.QMessageBox.warning(self, 'Save URDF', 'No parts available to export.')
+            QtWidgets.QMessageBox.warning(self, '保存 URDF', '没有可导出的部件。')
             return
 
         project_name = self._project_name()
 
         base_dir = QtWidgets.QFileDialog.getExistingDirectory(
             self,
-            'Select export directory',
+            '选择导出目录',
             '',
         )
         if not base_dir:
@@ -1823,7 +2200,7 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             os.makedirs(project_dir, exist_ok=True)
             os.makedirs(urdf_dir, exist_ok=True)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self, 'Save URDF', f'Failed to create directories:\n{exc}')
+            QtWidgets.QMessageBox.critical(self, '保存 URDF', f'创建导出目录失败：\n{exc}')
             return
 
         used_names: set[str] = set()
@@ -1853,7 +2230,7 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             urdf_text = self.graph.build_urdf_text(mesh_path_prefix='../', mesh_name_map=mesh_name_map)
         except Exception as exc:
             traceback.print_exc()
-            QtWidgets.QMessageBox.critical(self, 'Save URDF', f'Unable to build URDF:\n{exc}')
+            QtWidgets.QMessageBox.critical(self, '保存 URDF', f'无法生成 URDF：\n{exc}')
             return
 
         urdf_path = os.path.join(urdf_dir, f'{project_name}.urdf')
@@ -1861,16 +2238,16 @@ class AssemblerWindow(QtWidgets.QMainWindow):
             with open(urdf_path, 'w', encoding='utf-8') as fh:
                 fh.write(urdf_text)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self, 'Save URDF', f'Failed to write URDF:\n{exc}')
+            QtWidgets.QMessageBox.critical(self, '保存 URDF', f'写入 URDF 失败：\n{exc}')
             return
 
-        message = f'URDF saved to:\n{urdf_path}'
+        message = f'URDF 已保存至：\n{urdf_path}'
         if copy_errors:
             details = '\n'.join(copy_errors)
-            message += f'\n\nHowever, some meshes failed to copy:\n{details}'
-            QtWidgets.QMessageBox.warning(self, 'Save URDF', message)
+            message += f'\n\n但部分网格文件复制失败：\n{details}'
+            QtWidgets.QMessageBox.warning(self, '保存 URDF', message)
         else:
-            QtWidgets.QMessageBox.information(self, 'Save URDF', message)
+            QtWidgets.QMessageBox.information(self, '保存 URDF', message)
 
     # -- Preview helpers -------------------------------------------------
     @staticmethod

@@ -169,6 +169,20 @@ class WorkbenchWindow(QMainWindow):
             self.tab_widget.setCurrentIndex(2)
             self._set_status(f"已导入装配器: {os.path.basename(path)}")
 
+    def load_project_file(self, path: str, show_dialogs: bool = True) -> bool:
+        if not path:
+            return False
+        absolute_path = os.path.abspath(path)
+        if not os.path.exists(absolute_path):
+            if show_dialogs:
+                QMessageBox.warning(self, "提示", f"未找到项目文件:\n{absolute_path}")
+            return False
+        loaded = self.assembler.load_project_from_path(absolute_path, show_messages=show_dialogs)
+        if loaded:
+            self.tab_widget.setCurrentIndex(2)
+            self._set_status(f"已载入装配项目: {os.path.basename(absolute_path)}")
+        return loaded
+
     # ------------------------------------------------------------------
     # Signal handlers
     # ------------------------------------------------------------------
