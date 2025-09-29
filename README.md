@@ -50,7 +50,7 @@ Based on it, we made the following improvements:
 FluxhWeave_Workbench.py 集成 STL 预处理、部件元数据管理与 URDF 装配，全流程围绕 SolidWorks 导出的 STL 实现快速、模块化的机器人模型构建。
 FluxhWeave_Workbench.py unifies STL preprocessing, part metadata editing, and URDF assembly, delivering a fast modular robot modeling pipeline for SolidWorks exports.
 ### Step 1 · STL 预处理 / STL Preprocessing
-#### 1.导入 STL & 批量管理 /Import STL & batch-ready: 
+### 1.导入 STL & 批量管理 /Import STL & batch-ready: 
 选择单个或多个 SolidWorks 导出的 STL；工具自动记录最近使用路径，便于批量整理。
 Load one or more SolidWorks STL files; recent directories are remembered for streamlined batch work.
 
