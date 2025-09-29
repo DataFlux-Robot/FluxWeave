@@ -29,6 +29,10 @@ To address this, we developed this tool within the **R³ Architecture**, with th
 
 ## 特别感谢 | Special Thanks
 本项目深受 [URDF_kitchen](https://github.com/Ninagawa123/URDF_kitchen) 项目的启发 🙏。  
+
+http://urdf.robotsfan.com/
+
+
 在此基础上，我们进行了如下扩展与完善：  
 
 - **STL 模型处理能力增强**：引入坐标系旋转、原点变换操作  
