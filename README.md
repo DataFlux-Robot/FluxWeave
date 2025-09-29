@@ -9,7 +9,7 @@
 - 灵活性不足  
 - 难以适应模块化拼装需求  
 
-因此，我们结合 **R³ 架构**的项目需求，开发了本工具，旨在实现：  
+因此，我们结合项目需求，开发了本工具，旨在实现：  
 - 根据模块拼插过程 **动态生成 URDF 文件**  
 - 简化机器人硬件配置的建模过程  
 - 为后续仿真与部署提供自动化支持  
@@ -20,7 +20,7 @@ However, the official **SolidWorks to URDF Exporter** is often inconvenient to u
 - Limited flexibility  
 - Not suitable for modular robot assembly  
 
-To address this, we developed this tool within the **R³ Architecture**, with the goals of:  
+To address this, we developed this tool, with the goals of:  
 - **Dynamically generating URDF files** from modular assembly  
 - Simplifying robot hardware modeling  
 - Supporting automated workflows for simulation and deployment  
@@ -29,9 +29,6 @@ To address this, we developed this tool within the **R³ Architecture**, with th
 
 ## 特别感谢 | Special Thanks
 本项目深受 [URDF_kitchen](https://github.com/Ninagawa123/URDF_kitchen) 项目的启发 🙏。  
-
-http://urdf.robotsfan.com/
-
 
 在此基础上，我们进行了如下扩展与完善：  
 
@@ -49,52 +46,42 @@ Based on it, we made the following improvements:
 ---
 
 ## 使用流程 | Usage Guide
-本工具的使用流程与 `URDF_kitchen` 工具链类似，并在此基础上扩展：  
 
-The workflow is similar to the `URDF_kitchen` toolchain, with added features:  
+FluxhWeave_Workbench.py 集成 STL 预处理、部件元数据管理与 URDF 装配，全流程围绕 SolidWorks 导出的 STL 实现快速、模块化的机器人模型构建。
+FluxhWeave_Workbench.py unifies STL preprocessing, part metadata editing, and URDF assembly, delivering a fast modular robot modeling pipeline for SolidWorks exports.
+### Step 1 · STL 预处理 / STL Preprocessing
+导入 STL & 批量管理：选择单个或多个 SolidWorks 导出的 STL；工具自动记录最近使用路径，便于批量整理。
+Import STL & batch-ready: Load one or more SolidWorks STL files; recent directories are remembered for streamlined batch work.
+坐标调整与归一化：通过轴向旋转、镜像、缩放、原点平移等操作，将模型统一到规范坐标系；实时 VTK 预览辅助确认。
+Coordinate alignment: Rotate, mirror, scale, and translate the origin to normalize geometry; a live VTK preview validates each tweak.
+基础清理与导出：自动执行 STL 清理、法线修正，并可将处理结果导出供后续步骤直接使用。
+Cleanup & export: Automated STL cleanup and normal fixes ensure clean meshes that can be exported for the next stage.
 
-### 1. STL 模型预处理 / STL Preprocessing  
-- 对应工具：`urdf_kitchen_StlSourcer_V2`  
-- 在本项目中：  
-  - 导入 STL 文件  
-  - 进行 **坐标轴调整**、**原点校正**  
-  - 确保零件在统一的坐标系下对齐  
+### Step 2 · 部件元数据 / Part Metadata
+加载预处理 STL：一步导入 Step 1 的结果，界面自动读取模型尺寸并准备属性面板。
+Load preprocessed STL: Bring in the refined meshes; dimensions are parsed and panels are primed for metadata entry.
+定义连接点 (Marker Points)：为每个连接点定位、命名、设置轴向；支持三维坐标微调、方向矢量可视化，以及与 SolidWorks 基准对齐。
+Define marker points: Position, name, and orient every docking point; fine-tune coordinates, visualize joint axes, and align with original CAD datums.
+物理属性录入：输入质量、惯量矩阵、摩擦等参数，提供模板与单位提示；自动校验对角元和正定性，防止常见错误。
+Physical properties: Specify mass, inertia tensor, friction, etc., with guided templates and unit hints; built-in validation ensures positive-definite tensors.
+元数据嵌入 & 导出：将配置写入 STL 中继或导出独立 XML，供装配阶段自动解析；支持版本号与作者信息追踪。
+Embed & export metadata: Save metadata back into STL headers or external XML files, enabling automatic discovery in assembly; versioning and authorship tags are supported
 
-- Equivalent tool: `urdf_kitchen_StlSourcer_V2`  
-- In this project:  
-  - Import STL files  
-  - Perform **axis rotation** and **origin correction**  
-  - Align all parts to a unified coordinate system  
+### Step 3 · URDF 装配 / URDF Assembly
+导入部件：读取嵌入元数据的 STL，自动生成节点图；缺失数据会提示回到 Step 2 补充。
+Import parts: Load metadata-augmented STL files to auto-create graph nodes; missing data triggers guided reminders to revisit Step 2.
+建立连接：拖拽连接器节点，绑定父子连接点；面板即时显示链路、关节类型与坐标校验信息。
+Connect modules: Drag connector nodes between parts, binding parent/child markers; the panel shows link names, joint types, and alignment diagnostics.
+关节参数调节：在 “关节控制” 中实时修改角度、上下限、力矩、速度等；连续/滑动关节单位自动切换，支持延迟刷新减轻渲染卡顿。
+Tune joint parameters: Adjust angle, limits, effort, and velocity live; units adapt to joint type and debounced updates smooth the viewport.
+预览与导出 URDF：一键生成 URDF 文本，支持复制、保存及批量导出 STL；同时保留项目 JSON，方便二次编辑。
+Preview & export: Generate URDF with one click, copy/save the file, and export STL assets; project JSON snapshots enable later revisions.
+Tips
 
----
-
-### 2. 模块属性定义 / Module Property Definition  
-- 对应工具：`urdf_kitchen_PartsEditor_V2`  
-- 在本项目中：  
-  - 定义 **连接点 (marker point)**  
-  - 设置 **惯量、质量、摩擦系数** 等动力学属性  
-  - 提供更直观的输入方式，简化惯量参数配置  
-
-- Equivalent tool: `urdf_kitchen_PartsEditor_V2`  
-- In this project:  
-  - Define **connection points (marker points)**  
-  - Assign **inertia, mass, friction** and other dynamics  
-  - Provide more intuitive UI for inertia input  
-
----
-
-### 3. 模块拼装与 URDF 生成 / Assembly & URDF Generation  
-- 对应工具：`urdf_kitchen_Assembler_V2`  
-- 在本项目中：  
-  - 按照硬件拼插顺序 **组装零件**  
-  - 自动生成完整的 **URDF 模型**  
-  - 支持导入至 ROS / Gazebo / IsaacSim 等仿真环境  
-
-- Equivalent tool: `urdf_kitchen_Assembler_V2`  
-- In this project:  
-  - Assemble parts based on physical connections  
-  - Automatically generate a complete **URDF model**  
-  - Compatible with ROS, Gazebo, IsaacSim and other platforms  
+推荐按顺序完成三个阶段，以便自动传递路径、元数据与项目状态。
+Follow the three-stage order to keep paths, metadata, and state flowing automatically.
+URDF 生成后可直接导入 ROS / Gazebo / Isaac Sim；未来版本将拓展 USD、IsaacLab 等输出选项。
+Generated URDFs drop into ROS, Gazebo, or Isaac Sim; future releases aim for USD/IsaacLab exporters.
 
 ---
 
