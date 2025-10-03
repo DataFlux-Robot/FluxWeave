@@ -36,6 +36,8 @@ from stl_metadata import extract_metadata_text
 from URDF_STLViewerWidget import STLViewerWidget
 
 
+DEGREE_STEP = 5.0
+
 JOINT_TYPE_CHOICES = [
     ('revolute', '旋转关节'),
     ('continuous', '连续旋转'),
@@ -276,6 +278,7 @@ class ConnectorNode(BaseNode):
         self.joint_limit_upper = math.pi
         self.joint_effort = 0.0
         self.joint_velocity = 0.0
+        self.joint_default_position = 0.0
 
     # -- Reset helpers ---------------------------------------------------
     def clear_parent_binding(self) -> None:
@@ -455,10 +458,13 @@ class ConnectorEditorDialog(QtWidgets.QDialog):
 class JointPanelV3(QtWidgets.QWidget):
     """Side panel listing connectors with live joint controls."""
 
+    defaultsSaved = QtCore.Signal(str, dict)
+
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
         self.graph: Optional[AssemblerGraphV3] = None
         self.rows: Dict[ConnectorNode, Dict[str, QtWidgets.QWidget]] = {}
+        self._last_defaults_path: Optional[str] = None
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -484,6 +490,16 @@ class JointPanelV3(QtWidgets.QWidget):
         refresh_btn.clicked.connect(self._manual_refresh)
         layout.addWidget(refresh_btn)
 
+        action_row = QtWidgets.QHBoxLayout()
+        action_row.setSpacing(8)
+
+        save_btn = QtWidgets.QPushButton('导出默认角度…')
+        save_btn.clicked.connect(self._save_defaults_dialog)
+        action_row.addWidget(save_btn)
+
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
     # -- Refresh ---------------------------------------------------------
     def refresh_from_graph(self, graph: AssemblerGraphV3):
         self.graph = graph
@@ -506,6 +522,82 @@ class JointPanelV3(QtWidgets.QWidget):
                 widget.deleteLater()
         self.rows.clear()
 
+    def _connector_link_names(self, connector: ConnectorNode) -> Tuple[str, str]:
+        parent_name = 'base_link'
+        child_name = 'child'
+        parent_graph = connector.graph
+        if parent_graph and connector.parent_node_id:
+            parent_node = parent_graph.get_node_by_id(connector.parent_node_id)
+            if parent_node:
+                parent_name = getattr(parent_node, 'link_name', parent_node.name())
+        if parent_graph and connector.child_node_id:
+            child_node = parent_graph.get_node_by_id(connector.child_node_id)
+            if child_node:
+                child_name = getattr(child_node, 'link_name', child_node.name())
+        return parent_name, child_name
+
+    def _connector_joint_name(self, connector: ConnectorNode) -> str:
+        joint_name = (connector.joint_name or '').strip()
+        if joint_name:
+            return joint_name
+        parent_name, child_name = self._connector_link_names(connector)
+        fallback = f"{parent_name}_{child_name}".strip('_')
+        if fallback:
+            return fallback.replace(' ', '_')
+        raw_name = connector.name()
+        return raw_name or f"connector_{id(connector)}"
+
+    def _gather_joint_defaults(self) -> Dict[str, float]:
+        defaults: Dict[str, float] = {}
+        if not self.graph:
+            return defaults
+        for connector in self.graph.connector_nodes:
+            if not connector.is_fully_connected():
+                continue
+            if getattr(connector, 'joint_type', 'fixed') == 'fixed':
+                continue
+            joint_name = self._connector_joint_name(connector)
+            try:
+                value = float(getattr(connector, 'joint_default_position', 0.0))
+            except (TypeError, ValueError):
+                continue
+            defaults[joint_name] = value
+        return defaults
+
+    def _save_defaults_dialog(self) -> None:
+        defaults = self._gather_joint_defaults()
+        if not defaults:
+            QtWidgets.QMessageBox.information(self, '导出默认角度', '当前没有可导出的关节默认值。')
+            return
+
+        default_dir = self._last_defaults_path or os.getcwd()
+        suggestion = os.path.join(default_dir, 'joint_defaults.json')
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            '保存关节默认角度',
+            suggestion,
+            'JSON 文件 (*.json);;所有文件 (*)',
+        )
+        if not path:
+            return
+        if not path.lower().endswith('.json'):
+            path += '.json'
+
+        payload = {
+            'version': 1,
+            'joint_defaults': defaults,
+            'units': 'radians (rotation) or meters (prismatic)',
+        }
+        try:
+            with open(path, 'w', encoding='utf-8') as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:  # noqa: BLE001
+            QtWidgets.QMessageBox.critical(self, '保存失败', f'无法写入 JSON 文件：\n{exc}')
+            return
+        self._last_defaults_path = os.path.dirname(path)
+        self.defaultsSaved.emit(path, dict(defaults))
+        QtWidgets.QMessageBox.information(self, '导出成功', f'关节默认角度已保存至：\n{path}')
+
     def _add_row(self, connector: ConnectorNode):
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
@@ -521,22 +613,16 @@ class JointPanelV3(QtWidgets.QWidget):
             connector.joint_effort = 0.0
         if not hasattr(connector, 'joint_velocity'):
             connector.joint_velocity = 0.0
+        if not hasattr(connector, 'joint_default_position'):
+            connector.joint_default_position = 0.0
 
-        parent_graph = connector.graph
-        parent_name = 'base_link'
-        if parent_graph and connector.parent_node_id:
-            parent_node = parent_graph.get_node_by_id(connector.parent_node_id)
-            if parent_node:
-                parent_name = getattr(parent_node, 'link_name', parent_node.name())
-        child_name = 'child'
-        if connector.graph and connector.child_node_id:
-            child_node = connector.graph.get_node_by_id(connector.child_node_id)
-            if child_node:
-                child_name = getattr(child_node, 'link_name', child_node.name())
+        parent_name, child_name = self._connector_link_names(connector)
 
         joint_label = JOINT_TYPE_LABEL_MAP.get(connector.joint_type, connector.joint_type)
         label = QtWidgets.QLabel(f'{parent_name} → {child_name}（{joint_label}）')
         layout.addWidget(label)
+
+        use_degrees = connector.joint_type in ('revolute', 'continuous')
 
         angle_layout = QtWidgets.QHBoxLayout()
         angle_layout.setSpacing(4)
@@ -547,11 +633,25 @@ class JointPanelV3(QtWidgets.QWidget):
         angle_layout.addWidget(slider, 1)
 
         spin = QtWidgets.QDoubleSpinBox()
-        spin.setRange(-100.0, 100.0)
-        spin.setDecimals(4)
-        spin.setSingleStep(0.01)
+        if connector.joint_type == 'prismatic':
+            spin.setRange(-1000.0, 1000.0)
+            spin.setDecimals(4)
+            spin.setSingleStep(0.01)
+            spin.setSuffix(' m')
+        else:
+            spin.setRange(-100.0, 100.0)
+            spin.setDecimals(4)
+            spin.setSingleStep(math.radians(DEGREE_STEP) if use_degrees else 0.01)
+            spin.setSuffix(' rad')
         spin.setValue(connector.joint_angle)
         angle_layout.addWidget(spin)
+
+        deg_label: Optional[QtWidgets.QLabel] = None
+        if use_degrees:
+            deg_label = QtWidgets.QLabel()
+            deg_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            deg_label.setMinimumWidth(60)
+            angle_layout.addWidget(deg_label)
 
         layout.addLayout(angle_layout)
 
@@ -559,18 +659,29 @@ class JointPanelV3(QtWidgets.QWidget):
         limit_layout.setHorizontalSpacing(6)
         limit_layout.setVerticalSpacing(4)
 
-        use_degrees = connector.joint_type in ('revolute', 'continuous')
         range_suffix = ' rad'
         if connector.joint_type == 'prismatic':
             range_suffix = ' m'
         elif use_degrees:
             range_suffix = ' deg'
 
+        def _snap_degrees(value: float) -> float:
+            return round(value / DEGREE_STEP) * DEGREE_STEP
+
+        if use_degrees:
+            def _quantize_rad(val: float) -> float:
+                return math.radians(_snap_degrees(math.degrees(val)))
+
+            connector.joint_limit_lower = _quantize_rad(connector.joint_limit_lower)
+            connector.joint_limit_upper = _quantize_rad(connector.joint_limit_upper)
+            connector.joint_angle = _quantize_rad(connector.joint_angle)
+            connector.joint_default_position = _quantize_rad(getattr(connector, 'joint_default_position', 0.0))
+
         lower_spin = QtWidgets.QDoubleSpinBox()
         if use_degrees:
             lower_spin.setRange(-3600.0, 3600.0)
-            lower_spin.setDecimals(3)
-            lower_spin.setSingleStep(0.1)
+            lower_spin.setDecimals(0)
+            lower_spin.setSingleStep(DEGREE_STEP)
         else:
             lower_spin.setRange(-1000.0, 1000.0)
             lower_spin.setDecimals(4)
@@ -580,8 +691,8 @@ class JointPanelV3(QtWidgets.QWidget):
         upper_spin = QtWidgets.QDoubleSpinBox()
         if use_degrees:
             upper_spin.setRange(-3600.0, 3600.0)
-            upper_spin.setDecimals(3)
-            upper_spin.setSingleStep(0.1)
+            upper_spin.setDecimals(0)
+            upper_spin.setSingleStep(DEGREE_STEP)
         else:
             upper_spin.setRange(-1000.0, 1000.0)
             upper_spin.setDecimals(4)
@@ -600,25 +711,52 @@ class JointPanelV3(QtWidgets.QWidget):
         velocity_spin.setSingleStep(0.1)
         velocity_spin.setValue(max(0.0, float(connector.joint_velocity)))
 
+        default_spin = QtWidgets.QDoubleSpinBox()
+        default_label_text = '默认值'
+        if use_degrees:
+            default_spin.setRange(-3600.0, 3600.0)
+            default_spin.setDecimals(0)
+            default_spin.setSingleStep(DEGREE_STEP)
+            default_spin.setSuffix(' deg')
+            default_label_text = '默认角度'
+        elif connector.joint_type == 'prismatic':
+            default_spin.setRange(-1000.0, 1000.0)
+            default_spin.setDecimals(4)
+            default_spin.setSingleStep(0.01)
+            default_spin.setSuffix(' m')
+            default_label_text = '默认位移'
+        else:
+            default_spin.setRange(-1000.0, 1000.0)
+            default_spin.setDecimals(4)
+            default_spin.setSingleStep(0.01)
+            default_spin.setSuffix(' rad')
+
         if use_degrees:
             limit_tip = '此处以度数输入，导出 URDF 时将自动转换为弧度。'
-            angle_tip = '滑块以度为单位，数值会自动转换为弧度并写入 URDF。'
+            slider_tip = '滑块以度为单位，内部自动转换为弧度写入 URDF。'
+            spin_tip = '当前关节角度（弧度），按 5° 的步进量化。'
         elif connector.joint_type == 'prismatic':
             limit_tip = '位移上下限（米），将直接写入 URDF。'
-            angle_tip = '当前关节位移（米），与下方滑块联动。'
+            slider_tip = spin_tip = '当前关节位移（米），与下方滑块联动。'
         else:
             limit_tip = '角度上下限（弧度），将直接写入 URDF。'
-            angle_tip = '当前关节角度（弧度），与下方滑块联动。'
+            slider_tip = spin_tip = '当前关节角度（弧度），与下方滑块联动。'
 
         if connector.joint_type == 'continuous':
             limit_tip = '连续旋转关节在 URDF 中不会写入上下限。'
 
         lower_spin.setToolTip(limit_tip)
         upper_spin.setToolTip(limit_tip)
-        slider.setToolTip(angle_tip)
-        spin.setToolTip(angle_tip)
+        slider.setToolTip(slider_tip)
+        spin.setToolTip(spin_tip)
         effort_spin.setToolTip('施加在该关节上的最大力矩/力。')
         velocity_spin.setToolTip('关节的最大速度，用于 URDF 限幅。')
+        if use_degrees:
+            default_spin.setToolTip('设置仿真默认角度（度）。')
+        elif connector.joint_type == 'prismatic':
+            default_spin.setToolTip('设置仿真默认位移（米）。')
+        else:
+            default_spin.setToolTip('设置仿真默认位置。')
 
         if connector.joint_type == 'continuous':
             lower_spin.setEnabled(False)
@@ -632,20 +770,31 @@ class JointPanelV3(QtWidgets.QWidget):
         limit_layout.addWidget(effort_spin, 1, 1)
         limit_layout.addWidget(QtWidgets.QLabel('速度'), 1, 2)
         limit_layout.addWidget(velocity_spin, 1, 3)
+        limit_layout.addWidget(QtWidgets.QLabel(default_label_text), 2, 0)
+        limit_layout.addWidget(default_spin, 2, 1, 1, 3)
 
         layout.addLayout(limit_layout)
 
-        slider_scale = 10.0 if use_degrees else 1000.0
+        slider_scale = 1.0 if use_degrees else 1000.0
+
+        if use_degrees:
+            slider.setSingleStep(int(DEGREE_STEP))
+            slider.setPageStep(int(DEGREE_STEP * 3))
 
         def _display_value(value: float) -> float:
             return math.degrees(value) if use_degrees else float(value)
 
         def _slider_to_value(position: int) -> float:
             raw = position / slider_scale
-            return math.radians(raw) if use_degrees else raw
+            if use_degrees:
+                raw = _snap_degrees(raw)
+                return math.radians(raw)
+            return raw
 
         def _value_to_slider(value: float) -> int:
             raw = _display_value(value)
+            if use_degrees:
+                raw = _snap_degrees(raw)
             return int(round(raw * slider_scale))
 
         def _set_spin_value(box: QtWidgets.QDoubleSpinBox, value: float) -> None:
@@ -662,7 +811,10 @@ class JointPanelV3(QtWidgets.QWidget):
 
         def _clamp_to_limits(value: float) -> float:
             lower_val, upper_val = _current_limits()
-            return min(max(value, lower_val), upper_val)
+            clamped = min(max(value, lower_val), upper_val)
+            if use_degrees:
+                clamped = math.radians(_snap_degrees(math.degrees(clamped)))
+            return clamped
 
         def _trigger_recalc(immediate: bool = False) -> None:
             graph = connector.graph
@@ -694,6 +846,8 @@ class JointPanelV3(QtWidgets.QWidget):
             spin.blockSignals(True)
             spin.setValue(angle)
             spin.blockSignals(False)
+            if deg_label is not None:
+                deg_label.setText(f'{math.degrees(angle):.0f}°')
 
         def _apply_angle(angle: float, trigger_transform: bool = True) -> None:
             clamped = _clamp_to_limits(angle)
@@ -721,10 +875,16 @@ class JointPanelV3(QtWidgets.QWidget):
             if not math.isclose(connector.joint_angle, clamped, rel_tol=1e-9, abs_tol=1e-9):
                 connector.joint_angle = clamped
                 _trigger_recalc()
+            if deg_label is not None:
+                deg_label.setText(f'{math.degrees(clamped):.0f}°')
 
         def on_spin(val):
-            clamped = _clamp_to_limits(val)
-            if not math.isclose(val, clamped, rel_tol=1e-9, abs_tol=1e-9):
+            if use_degrees:
+                snapped = math.radians(_snap_degrees(math.degrees(val)))
+            else:
+                snapped = val
+            clamped = _clamp_to_limits(snapped)
+            if not math.isclose(snapped, clamped, rel_tol=1e-9, abs_tol=1e-9):
                 spin.blockSignals(True)
                 spin.setValue(clamped)
                 spin.blockSignals(False)
@@ -736,9 +896,17 @@ class JointPanelV3(QtWidgets.QWidget):
             if not math.isclose(connector.joint_angle, clamped, rel_tol=1e-9, abs_tol=1e-9):
                 connector.joint_angle = clamped
                 _trigger_recalc()
+            if deg_label is not None:
+                deg_label.setText(f'{math.degrees(clamped):.0f}°')
 
         def on_lower(val):
-            raw = math.radians(val) if use_degrees else float(val)
+            if use_degrees:
+                snapped_deg = _snap_degrees(val)
+                if not math.isclose(snapped_deg, val, abs_tol=1e-9):
+                    _set_spin_value(lower_spin, snapped_deg)
+                raw = math.radians(snapped_deg)
+            else:
+                raw = float(val)
             connector.joint_limit_lower = raw
             if connector.joint_limit_upper < connector.joint_limit_lower:
                 connector.joint_limit_upper = raw
@@ -747,7 +915,13 @@ class JointPanelV3(QtWidgets.QWidget):
             _apply_angle(connector.joint_angle)
 
         def on_upper(val):
-            raw = math.radians(val) if use_degrees else float(val)
+            if use_degrees:
+                snapped_deg = _snap_degrees(val)
+                if not math.isclose(snapped_deg, val, abs_tol=1e-9):
+                    _set_spin_value(upper_spin, snapped_deg)
+                raw = math.radians(snapped_deg)
+            else:
+                raw = float(val)
             connector.joint_limit_upper = raw
             if connector.joint_limit_upper < connector.joint_limit_lower:
                 connector.joint_limit_lower = raw
@@ -761,10 +935,42 @@ class JointPanelV3(QtWidgets.QWidget):
         def on_velocity(val):
             connector.joint_velocity = float(val)
 
-        _set_spin_value(lower_spin, _display_value(connector.joint_limit_lower))
-        _set_spin_value(upper_spin, _display_value(connector.joint_limit_upper))
+        def on_default(val):
+            if use_degrees:
+                snapped_deg = _snap_degrees(val)
+                if not math.isclose(snapped_deg, val, abs_tol=1e-9):
+                    default_spin.blockSignals(True)
+                    default_spin.setValue(snapped_deg)
+                    default_spin.blockSignals(False)
+                raw = math.radians(snapped_deg)
+            else:
+                raw = float(val)
+            lower_val, upper_val = _current_limits()
+            clamped = min(max(raw, lower_val), upper_val)
+            if not math.isclose(raw, clamped, rel_tol=1e-9, abs_tol=1e-9):
+                default_spin.blockSignals(True)
+                default_spin.setValue(_display_value(clamped))
+                default_spin.blockSignals(False)
+            connector.joint_default_position = clamped
+
+        lower_display = _display_value(connector.joint_limit_lower)
+        upper_display = _display_value(connector.joint_limit_upper)
+        if use_degrees:
+            lower_display = _snap_degrees(lower_display)
+            upper_display = _snap_degrees(upper_display)
+            connector.joint_limit_lower = math.radians(lower_display)
+            connector.joint_limit_upper = math.radians(upper_display)
+        _set_spin_value(lower_spin, lower_display)
+        _set_spin_value(upper_spin, upper_display)
         _update_slider_range()
         _apply_angle(connector.joint_angle, trigger_transform=False)
+        default_spin.blockSignals(True)
+        default_display = _display_value(getattr(connector, 'joint_default_position', 0.0))
+        if use_degrees:
+            default_display = _snap_degrees(default_display)
+            connector.joint_default_position = math.radians(default_display)
+        default_spin.setValue(default_display)
+        default_spin.blockSignals(False)
 
         slider.valueChanged.connect(on_slider)
         spin.valueChanged.connect(on_spin)
@@ -773,6 +979,7 @@ class JointPanelV3(QtWidgets.QWidget):
         upper_spin.valueChanged.connect(on_upper)
         effort_spin.valueChanged.connect(on_effort)
         velocity_spin.valueChanged.connect(on_velocity)
+        default_spin.valueChanged.connect(on_default)
 
         if connector.joint_type == 'fixed':
             slider.setEnabled(False)
@@ -781,6 +988,7 @@ class JointPanelV3(QtWidgets.QWidget):
             upper_spin.setEnabled(False)
             effort_spin.setEnabled(False)
             velocity_spin.setEnabled(False)
+            default_spin.setEnabled(False)
 
         self.container_layout.addWidget(widget)
         self.rows[connector] = {
@@ -790,6 +998,8 @@ class JointPanelV3(QtWidgets.QWidget):
             'upper': upper_spin,
             'effort': effort_spin,
             'velocity': velocity_spin,
+            'default': default_spin,
+            'deg_label': deg_label,
         }
 class BaseLinkNode(BaseNode):
     """Root node representing the URDF base link."""
@@ -1269,6 +1479,7 @@ class AssemblerGraphV3(NodeGraph):
                     'joint_limit_upper': float(node.joint_limit_upper),
                     'joint_effort': float(node.joint_effort),
                     'joint_velocity': float(node.joint_velocity),
+                    'joint_default_position': float(getattr(node, 'joint_default_position', node.joint_angle)),
                     'parent_local_xyz': [float(v) for v in node.parent_local_xyz],
                     'parent_local_rpy': [float(v) for v in node.parent_local_rpy],
                     'parent_axis': [float(v) for v in node.parent_axis],
@@ -1399,6 +1610,8 @@ class AssemblerGraphV3(NodeGraph):
                 lower_val = connector_node.joint_limit_lower
                 upper_val = connector_node.joint_limit_upper
                 connector_node.joint_angle = min(max(angle_val, lower_val), upper_val)
+                default_val = float(cfg.get('joint_default_position', getattr(connector_node, 'joint_default_position', 0.0)))
+                connector_node.joint_default_position = min(max(default_val, lower_val), upper_val)
 
                 parent_binding = cfg.get('parent_binding') or {}
                 parent_uid = parent_binding.get('node_uid', parent_binding.get('node_id'))
@@ -1847,6 +2060,7 @@ class AssemblerWindow(QtWidgets.QMainWindow):
     """Main application window that hosts the graph and control widgets."""
 
     partImported = QtCore.Signal(str)
+    jointDefaultsSaved = QtCore.Signal(str, dict)
 
     def __init__(self):
         super().__init__()
@@ -1862,6 +2076,7 @@ class AssemblerWindow(QtWidgets.QMainWindow):
         # Link graph with viewer for transform updates
         self.graph.stl_viewer = self.viewer
         self.graph.joint_panel = self.joint_panel
+        self.joint_panel.defaultsSaved.connect(self._on_joint_defaults_saved)
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -1925,6 +2140,9 @@ class AssemblerWindow(QtWidgets.QMainWindow):
         self.graph.recalculate_transforms()
         self.joint_panel.refresh_from_graph(self.graph)
         self._apply_preview_colors()
+
+    def _on_joint_defaults_saved(self, path: str, defaults: Dict[str, float]) -> None:
+        self.jointDefaultsSaved.emit(path, dict(defaults))
 
     # -- Actions ---------------------------------------------------------
     def _on_import_part(self):
