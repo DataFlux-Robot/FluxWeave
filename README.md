@@ -9,6 +9,7 @@ FluxhWeave Workbench unifies STL preprocessing, part metadata authoring, URDF as
 在机器人开发与仿真中，快速生成 **URDF** 模型是一项常见需求。但官方 **SolidWorks to URDF Exporter** 工具在实际项目里经常显得笨重且缺乏灵活性：操作步骤繁琐、难以服务模块化拼装场景。FluxhWeave 借鉴并扩展了 URDF_kitchen 的理念，让开发者可以按照真实的部件拼插过程动态生成 URDF，同时保持对 STL 预处理、惯量录入与节点装配的细粒度控制。
 
 Rapid URDF authoring is a recurring bottleneck across robotics projects. The official SolidWorks to URDF Exporter often proves cumbersome and inflexible for modular builds. FluxhWeave extends the URDF_kitchen approach so that engineers can mirror the physical assembly process, cleanly preprocess meshes, author inertial metadata, and stitch everything into a URDF with minimal friction.
+
 ---
 
 在机器人开发的世界里，我们习惯了传统的路径：在 SolidWorks 中精心设计，通过一个插件导出 URDF，然后在 ROS/Gazebo 的世界里进行配置、调试和仿真。这条路我们走了很久，但它是否是最高效、最灵活的路径？
