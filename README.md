@@ -85,6 +85,9 @@ This work builds on [URDF_kitchen](https://github.com/Ninagawa123/URDF_kitchen) 
 
 ## 使用流程 | Usage Guide
 
+图文教程可以参见：https://zhuanlan.zhihu.com/p/1968310439084528136
+感谢大家支持
+
 ### Step 1 · STL 预处理 / STL preprocessing
 
 1. **批量导入 STL**：读取 SolidWorks 导出的单个或多个 STL，自动记录最近使用目录。
