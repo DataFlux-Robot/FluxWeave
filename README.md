@@ -141,12 +141,13 @@ The simulation tab curates joint defaults and actuator profiles, letting teams e
 - **模板产出 / Template delivery**：输出的 USD 保留 URDF 的关节层级与惯量结构，可作为 Isaac Sim/IsaacLab 项目骨架继续填充材质、控制器与任务逻辑。
 
 ## 项目路线图 | Future roadmap
-
+已经完成的：
 - 增加直接输出 USD 模型 / Add direct USD export without IsaacLab dependency.
-- 引入更多预定义几何与作动器 / Ship richer built-in part and actuator libraries.
-- 同步加载力学模型 / Load analytic or data-driven dynamics alongside URDF.
-- 导入高质量视觉素材 / Integrate material and render-ready assets.
 - 一键生成 IsaacLab 任务模板 / Provide full IsaacLab scene templates out of the box.
+正在开发的：
+- 完善mjcf/sdf支持
+- 引入更多预定义几何与作动器
+- 完善附加力模型的接口
 
 ## 开源协议 | License
 
