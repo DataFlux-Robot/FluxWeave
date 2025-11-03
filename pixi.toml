@@ -1,0 +1,66 @@
+[project]
+name = "fluxweave"
+version = "0.1.0"
+description = "FluxWeave - GUI-based toolkit for dynamic URDF generation and robot modeling"
+authors = ["DataFlux-Robot"]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+# Core Python (limited to <3.12 due to NodeGraphQt requiring distutils)
+python = ">=3.9,<3.12"
+
+# GUI Framework
+pyside6 = ">=6.5.0"
+qtpy = ">=2.4.0"
+
+# 3D Visualization
+vtk = ">=9.2.0"
+numpy = ">=1.24.0"
+
+# setuptools provides distutils for compatibility
+setuptools = "*"
+
+# PyPI dependencies (packages not available in conda)
+[pypi-dependencies]
+NodeGraphQt = ">=0.6.0"
+
+[feature.isaac.dependencies]
+# Isaac Lab Integration (optional)
+# Note: Install PyTorch separately following NVIDIA's instructions
+# pytorch and pytorch-cuda should be installed via pip or conda based on your CUDA version
+
+[feature.dev.dependencies]
+# Development tools
+ipython = "*"
+pytest = "*"
+black = "*"
+ruff = "*"
+
+[environments]
+# Default environment with core dependencies
+default = { solve-group = "default" }
+
+# Development environment with extra tools
+dev = { features = ["dev"], solve-group = "default" }
+
+# Full environment including Isaac Lab support
+full = { features = ["isaac"], solve-group = "default" }
+
+[tasks]
+# Launch the main application
+start = "python FluxhWeave_Workbench.py"
+
+# Launch individual components
+stl-sourcer = "python FluxhWeave_StlSourcer_V2.py"
+parts-editor = "python FluxhWeave_PartsEditor_V2.py"
+assembler = "python FluxhWeave_Assembler_V3.py"
+sim-config = "python FluxhWeave_SimulationConfig.py"
+
+# Development tasks
+lint = "ruff check ."
+format = "black ."
+format-check = "black --check ."
+
+# Test tasks (when tests are added)
+test = "pytest tests/"
