@@ -1,0 +1,5 @@
+# test stl file
+meshes/
+
+# Compiled Python files
+*.pyc

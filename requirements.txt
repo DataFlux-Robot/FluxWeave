@@ -1,0 +1,18 @@
+# FluxWeave Dependencies
+# Core GUI and visualization dependencies
+
+# Qt Framework
+PySide6>=6.5.0
+qtpy>=2.4.0
+
+# 3D Visualization
+vtk>=9.2.0
+numpy>=1.24.0
+
+# Node Graph Framework
+NodeGraphQt>=0.6.0
+
+# Optional: Isaac Lab Integration
+# Uncomment if you need Isaac Lab/Isaac Sim integration
+# torch>=2.0.0
+# isaac-lab  # Note: Install from NVIDIA's instructions
