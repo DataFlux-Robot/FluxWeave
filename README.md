@@ -83,10 +83,12 @@ This work builds on [URDF_kitchen](https://github.com/Ninagawa123/URDF_kitchen) 
 2. **启动工作台 / Launch the workbench**：在项目根目录执行 `python FluxhWeave_Workbench.py`，应用会自动载入深色主题。
 3. **遵循分页顺序 / Follow the tabs**：建议按照 ① → ⑤ 顺序完成工作，以便路径、元数据与配置自动传递。
 
-## 使用流程 | Usage Guide
+## 图文教程
 
 图文教程可以参见：https://zhuanlan.zhihu.com/p/1968310439084528136
+大家在使用过程也可以在知乎评论区留言或者私信我，我常在知乎，欢迎大家前来交流和推荐
 感谢大家支持
+## 使用流程 | Usage Guide
 
 ### Step 1 · STL 预处理 / STL preprocessing
 
